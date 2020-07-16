@@ -1,0 +1,132 @@
+SELECT u.marca, u.modelo, u.descripcion, r.nombre
+FROM Unidades u
+JOIN Responsables r ON u.cod_responsable = r.cod_responsable
+JOIN Mantenimientos m ON u.cod_unidad = m.cod_unidad
+WHERE YEAR(m.fec_mantenim) = YEAR(GETDATE())
+GROUP BY u.marca, u.modelo, u.descripcion, r.nombre
+HAVING SUM(m.monto) > (SELECT AVG(m1.monto) FROM Mantenimientos m1 
+				WHERE YEAR(m1.fec_mantenim) = YEAR(GETDATE()))
+
+SELECT u.marca, u.modelo, u.descripcion, r.nombre
+FROM Unidades u
+JOIN Responsables r ON u.cod_responsable = r.cod_responsable
+JOIN Mantenimientos m ON u.cod_unidad = m.cod_unidad
+WHERE YEAR(m.fec_mantenim) = YEAR(GETDATE())
+AND m.monto > (SELECT AVG(m1.monto)
+				 FROM Mantenimientos m1 
+				WHERE YEAR(m1.fec_mantenim) = YEAR(GETDATE()))
+
+CREATE VIEW VistaMec (cod_mecanico, mecanico, cant_mant, monto_total)
+AS
+SELECT me.cod_mecanico, me.nombre, COUNT(*), SUM(m.monto)
+FROM Mantenimientos m 
+JOIN Mecanicos me m.cod_mecanico = me.cod_mecanico
+WHERE MONTH(m.fec_mantenim) = MONTH(GETDATE()) - 1
+GROUP BY me.cod_mecanico, me.nombre
+
+SELECT v.mecanico, v.monto_total
+FROM VistaMec v
+JOIN Mantenimientos m ON v.cod_mecanico = m.cod_mecanico
+WHERE MONTH(m.fec_mantenim) = MONTH(GETDATE()) - 1
+GROUP BY v.mecanico, v.monto_total
+HAVING AVG(m.monto) > 10000
+
+CREATE PROCEDURE spVehiculosPorFiltros
+@modelo int = NULL,
+@fecha datetime = NULL
+AS
+SELECT r.nombre, u.marca, u.modelo, u.descripcion
+FROM Responsables r
+JOIN Unidades u ON r.cod_responsable = u.cod_responsable
+WHERE u.modelo < @modelo
+OR year(u.fec_compra) < year(@fecha)
+
+---------------------------
+
+EXEC spVehiculosPorFiltros @fecha = '01/01/2010', @modelo = 2009
+
+EXEC spVehiculosPorFiltros 2009, '01/01/2010'
+
+
+LISTAR LAS MARCAS, EL MONTO TOTAL Y EL PROMEDIO PARA 
+LAS UNIDADES CUYA MARCA EMPIECE CON C Y QUE EL PROMEDIO DEL MONTO
+POR MARCA SEA MAYOR AL PROMEDIO DEL MONTO GENERAL 
+
+SELECT u.marca, SUM(m.MONTO), AVG(m.monto)
+FROM Unidades u
+JOIN Mantenimientos m ON u.cod_unidad = m.cod_unidad
+WHERE u.marca LIKE 'c%'
+GROUP BY u.marca
+HAVING AVG(m.monto) > 
+		(select avg(m1.monto) from mantenimientos m1)
+
+MOSTRAR TODAS LAS UNIDADES QUE NO HAYAN TENIDO MANTENIMIENTOS
+
+SELECT * FROM Unidades u
+WHERE NOT EXISTS (SELECT * FROM Mantenimientos m 
+				  WHERE m.cod_unidad = u.cod_unidad)
+
+SELECT * FROM Unidades u
+WHERE u.cod_unidad not in (SELECT m.cod_unidad 
+						FROM Mantenimientos m )
+
+UNIDADES CON MANTENIMIENTOS REALIZADOS POR EL MECANICO 4
+
+SELECT * FROM Unidades u
+WHERE EXISTS (SELECT * FROM Mantenimientos m 
+				  WHERE m.cod_unidad = u.cod_unidad
+				AND m.cod_mecanico = 4)
+
+SELECT * FROM Unidades u
+WHERE u.cod_unidad in (SELECT m.cod_unidad 
+				FROM Mantenimientos m 
+				  WHERE m.cod_mecanico = 4)
+
+MOSTRAR LAS UNIDADES EN LAS QUE TODOS SUS MANTENIMIENTOS 
+TENGAN UN MONTO MAYOR A $5000
+
+SELECT * FROM Unidades u
+WHERE 5000 < ALL (SELECT m.monto FROM Mantenimientos m 
+				  WHERE m.cod_unidad = u.cod_unidad)
+
+MOSTRAR LAS UNIDADES QUE HAYAN TENIDO ALGUN MANTENIMIENTO 
+REALIZADO POR UN MECANICO ESPECIALIZADO EN ELECTRICIDAD
+
+SELECT * FROM Unidades u
+WHERE 'ELECTRICIDAD' = 
+		ANY (SELECT me.especialidad FROM Mantenimientos m 
+		JOIN Mecanicos me ON m.cod_mecanico = me.cod_mecanico
+		WHERE m.cod_unidad = u.cod_unidad)
+
+HACER UN PROCEDIMIENTO ALMACENADO / FUNCION QUE RECIBA UN 
+CODIGO DE UNIDAD
+Y QUE DEVUELVA EL MONTO TOTAL DE SUS MANTENIMIENTOS EN UN 
+PARAMETRO DE SALIDA Y MOSTRAR DICHO MONTO
+
+CREATE PROCEDURE spMontoPorUnidad
+@cod_unidad int,
+@monto numeric(8,2) output
+as
+select @monto = SUM(m.monto) from mantenimientos m
+WHERE m.cod_unida = @cod_unidad
+
+----------------------------
+
+declare @montoTotal numeric(8,2)
+exec spMontoPorUnidad 
+				@cod_unidad = 5, @monto = @montoTotal output
+
+select @montoTotal
+
+CREATE FUNCTION fMontoPorUnidad
+(@cod_unidad int)
+returns numeric(8,2)
+as
+	begin
+		declare @monto numeric(8,2)
+		
+		select @monto = SUM(m.monto) from mantenimientos m
+		WHERE m.cod_unida = @cod_unidad
+
+		return @monto
+	end
